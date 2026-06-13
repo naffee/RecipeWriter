@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Recipe Writer Assistant</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Marked Markdown Parser -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="theme-light">
+  <!-- App Container -->
+  <div class="app-layout">
+    
+    <!-- Top Navigation Bar -->
+    <header class="app-header">
+      <div class="header-logo">
+        <i class="chef-icon" data-lucide="cooking-pot"></i>
+        <h1>Recipe<span>Writer</span></h1>
+        <span class="badge">WordPress Edition</span>
+      </div>
+      <div class="header-actions">
+        <button id="themeToggleBtn" class="icon-btn" title="Toggle Theme">
+          <i data-lucide="moon" class="dark-icon"></i>
+          <i data-lucide="sun" class="light-icon" style="display: none;"></i>
+        </button>
+        <button id="inspirationOpenBtn" class="nav-btn" title="Blog Inspiration">
+          <i data-lucide="book-open"></i>
+          <span>Inspiration Styles</span>
+        </button>
+        <button id="settingsOpenBtn" class="nav-btn primary-nav-btn" title="API & WordPress Credentials">
+          <i data-lucide="settings"></i>
+          <span>Settings & WP API</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="app-main">
+      
+      <!-- Left Panel: Generator Controls -->
+      <section class="panel-left">
+        <div class="panel-header">
+          <i data-lucide="sparkles"></i>
+          <h2>Recipe Generator</h2>
+        </div>
+        <div class="panel-content scrollable">
+          <!-- Pinterest Keyword & Queue Planner -->
+          <div class="keyword-planner-section">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="pinterestKeywords">Pinterest Target Keywords</label>
+              <input type="text" id="pinterestKeywords" placeholder="e.g. easy dinner, quick pasta" autocomplete="off" style="margin-bottom: 8px;">
+              <div class="input-action-row" style="margin-top: 0;">
+                <label style="font-size: 11px; text-transform: none; margin-bottom: 0; font-weight: normal; color: var(--text-secondary); display: flex; align-items: center; gap: 6px;">
+                  <span>Suggest</span>
+                  <input type="number" id="pinterestTitleCount" value="6" min="1" max="15" title="Number of titles to suggest" style="width: 50px; text-align: center; padding: 6px; border-radius: 6px; border: 1px solid var(--border-color); background-color: var(--bg-input); flex: 0 0 50px;">
+                  <span>titles</span>
+                </label>
+                <button id="suggestTitlesBtn" class="icon-text-btn primary-nav-btn" type="button" style="margin-left: auto;">
+                  <i data-lucide="sparkles"></i>
+                  <span>Suggest Titles</span>
+                </button>
+              </div>
+            </div>
+            
+            <div id="suggestedTitlesContainer" class="suggested-titles-list hidden">
+              <h4>Suggested Pinterest Titles</h4>
+              <div class="titles-grid" id="suggestedTitlesList"></div>
+            </div>
+
+            <div class="queue-header-row border-top-dash">
+              <h4>Generation Queue</h4>
+              <span id="queueCountBadge" class="badge">0 queued</span>
+            </div>
+            
+            <div id="generationQueueContainer" class="queue-list-container">
+              <div class="empty-state">
+                <p>No titles approved to write yet</p>
+              </div>
+            </div>
+
+            <button id="runQueueBtn" class="action-btn success-btn hidden" style="margin-top: 10px; padding: 8px 12px; font-size: 13px;">
+              <i data-lucide="play-circle"></i>
+              <span>Start Batch Write</span>
+            </button>
+          </div>
+
+          <hr class="panel-divider">
+
+          <!-- Concept Input -->
+          <div class="form-group">
+            <label for="recipeConcept">Recipe Concept or Dish Name</label>
+            <input type="text" id="recipeConcept" placeholder="e.g. Garlic Butter Shrimp Pasta with spinach" required autocomplete="off">
+          </div>
+
+          <!-- Ingredients Tags Input -->
+          <div class="form-group">
+            <label>Key Ingredients (on hand)</label>
+            <div class="tag-input-container">
+              <div id="ingredientTags" class="tag-list"></div>
+              <input type="text" id="ingredientInput" placeholder="Add ingredient + Press Enter" autocomplete="off">
+            </div>
+          </div>
+
+          <!-- Blog Style Presets -->
+          <div class="form-group">
+            <label for="blogStylePreset">Blog Writing Style</label>
+            <select id="blogStylePreset">
+              <option value="pinch-of-yum">Pinch of Yum Style (Warm Story, Cohesive)</option>
+              <option value="serious-eats">Serious Eats Style (Scientific, Analytical)</option>
+              <option value="sallys-baking">Sally's Baking Addiction Style (Tips-Heavy, Precise)</option>
+              <option value="standard-foodie" selected>Standard Foodie (Engaging, Clear)</option>
+            </select>
+          </div>
+
+          <!-- Options Grid -->
+          <div class="options-grid">
+            <div class="form-group">
+              <label for="recipeTone">Tone</label>
+              <select id="recipeTone">
+                <option value="storytelling" selected>Cozy Storytelling</option>
+                <option value="technical">Technical & Detailed</option>
+                <option value="conversational">Warm Conversational</option>
+                <option value="simple">Quick & Direct</option>
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label for="recipeLength">Target Length</label>
+              <select id="recipeLength">
+                <option value="short">Short (~600 words)</option>
+                <option value="standard" selected>Standard (~1200 words)</option>
+                <option value="long">Detailed SEO (~2000 words)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Dietary Constraints -->
+          <div class="form-group">
+            <label>Dietary Restrictions</label>
+            <div class="checkbox-grid">
+              <label class="checkbox-label">
+                <input type="checkbox" name="dietary" value="Gluten-Free">
+                <span>Gluten-Free</span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="dietary" value="Vegan">
+                <span>Vegan</span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="dietary" value="Vegetarian">
+                <span>Vegetarian</span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="dietary" value="Keto">
+                <span>Keto</span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="dietary" value="Paleo">
+                <span>Paleo</span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="dietary" value="Dairy-Free">
+                <span>Dairy-Free</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Web Search Options -->
+          <div class="form-group">
+            <label class="checkbox-label" style="font-weight: 700;">
+              <input type="checkbox" id="webSearchToggle" checked>
+              <span>Research Web & YouTube</span>
+            </label>
+            <span class="input-hint" style="margin-top: 4px;">Search for top-rated articles and YouTube tutorials to ground ingredients and ratios in verified recipes.</span>
+          </div>
+
+          <!-- Affiliate Products Selection -->
+          <div class="form-group" id="affiliatesSelectContainer">
+            <label style="font-weight: 700;">Affiliate Products to Include</label>
+            <div id="generatorAffiliatesList" class="checkbox-grid" style="margin-top: 8px;">
+              <!-- Dynamically populated checkbox elements -->
+            </div>
+            <span class="input-hint" style="margin-top: 4px;">Select which products from your inventory the AI should incorporate.</span>
+          </div>
+
+          <!-- Generate Action -->
+          <button id="generateRecipeBtn" class="action-btn">
+            <i data-lucide="wand-2"></i>
+            <span>Create Recipe Post</span>
+          </button>
+
+          <!-- Generation Status / Progress -->
+          <div id="generationProgress" class="progress-box hidden">
+            <div class="progress-spinner"></div>
+            <div class="progress-info">
+              <p class="progress-title">Writing Recipe Post...</p>
+              <p class="progress-subtitle">Calling OpenAI gpt-4o-mini</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Center Panel: Editor & Live Preview -->
+      <section class="panel-center">
+        <div class="panel-header tab-header">
+          <div class="editor-tabs">
+            <button id="tabEdit" class="tab-btn active" data-tab="editor-pane">
+              <i data-lucide="edit-3"></i>
+              <span>Write & Edit</span>
+            </button>
+            <button id="tabPreview" class="tab-btn" data-tab="preview-pane">
+              <i data-lucide="eye"></i>
+              <span>Live Preview</span>
+            </button>
+            <button id="tabWordPress" class="tab-btn" data-tab="wordpress-pane">
+              <i data-lucide="wordpress"></i>
+              <span>Publish to WordPress</span>
+            </button>
+          </div>
+          <div class="editor-actions">
+            <button id="saveDraftBtn" class="icon-text-btn secondary" title="Save Draft">
+              <i data-lucide="save"></i>
+              <span>Save Local</span>
+            </button>
+            <div class="dropdown">
+              <button id="exportBtn" class="icon-text-btn secondary">
+                <i data-lucide="download"></i>
+                <span>Export</span>
+                <i data-lucide="chevron-down" class="chevron"></i>
+              </button>
+              <div class="dropdown-menu">
+                <button id="copyMarkdownBtn"><i data-lucide="copy"></i> Copy Markdown</button>
+                <button id="copyHtmlBtn"><i data-lucide="code"></i> Copy HTML</button>
+                <button id="downloadMdBtn"><i data-lucide="file-text"></i> Download MD File</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-content pane-container">
+          <!-- Tab 1: Editor Pane -->
+          <div id="editor-pane" class="tab-pane active">
+            <textarea id="recipeMarkdown" placeholder="# Title of your recipe blog post...&#10;&#10;Generate a recipe post on the left, or start typing here in markdown format!"></textarea>
+          </div>
+
+          <!-- Tab 2: Preview Pane -->
+          <div id="preview-pane" class="tab-pane">
+            <div class="rendered-preview blog-theme-style" id="previewContainer">
+              <!-- Rendered markdown html will go here -->
+              <div class="preview-placeholder">
+                <i data-lucide="book-open"></i>
+                <p>No content to preview. Type in the editor or generate a recipe to see it rendered beautifully here.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 3: WordPress Pane -->
+          <div id="wordpress-pane" class="tab-pane">
+            <div class="wordpress-form-container">
+              <h3>Publish to WordPress Site</h3>
+              <p class="section-desc">Push your structured post and recipes directly to your website. We'll map the HTML content to the post block structure.</p>
+              
+              <div class="form-group">
+                <label for="wpPostTitle">Post Title</label>
+                <input type="text" id="wpPostTitle" placeholder="e.g. The Best Garlic Butter Shrimp Pasta" autocomplete="off">
+              </div>
+
+              <div class="options-grid">
+                <div class="form-group">
+                  <label for="wpPostStatus">Status</label>
+                  <select id="wpPostStatus">
+                    <option value="draft" selected>Draft (Recommended)</option>
+                    <option value="publish">Publish Immediately</option>
+                    <option value="private">Private</option>
+                  </select>
+                </div>
+                
+                <div class="form-group">
+                  <label for="wpCategory">Categories (Comma separated)</label>
+                  <input type="text" id="wpCategory" placeholder="e.g. Recipes, Pasta, Dinner" autocomplete="off">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="wpTags">Tags (Comma separated)</label>
+                <input type="text" id="wpTags" placeholder="e.g. shrimp, garlic-butter, 30-minutes" autocomplete="off">
+              </div>
+
+              <!-- Push Button -->
+              <button id="wpPublishBtn" class="action-btn success-btn">
+                <i data-lucide="send"></i>
+                <span>Send to WordPress</span>
+              </button>
+
+              <!-- WordPress Integration Status -->
+              <div id="wpPublishProgress" class="progress-box hidden">
+                <div class="progress-spinner"></div>
+                <div class="progress-info">
+                  <p class="progress-title">Publishing...</p>
+                  <p class="progress-subtitle">Sending data to your WordPress API</p>
+                </div>
+              </div>
+
+              <!-- WordPress Success/Error banner -->
+              <div id="wpMessageBanner" class="message-banner hidden"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Panel: Drafts & Inspiration -->
+      <section class="panel-right">
+        <!-- Drafts Section -->
+        <div class="right-subpanel top-subpanel flex-grow">
+          <div class="panel-header">
+            <i data-lucide="history"></i>
+            <h2>Saved Drafts</h2>
+          </div>
+          <div class="panel-content scrollable">
+            <div class="drafts-search">
+              <i data-lucide="search" class="search-icon"></i>
+              <input type="text" id="draftSearch" placeholder="Search saved drafts..." autocomplete="off">
+            </div>
+            <div class="drafts-list" id="draftsListContainer">
+              <!-- Stored drafts loaded via local storage -->
+              <div class="empty-state">
+                <p>No saved drafts found</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Recipe Inspiration Section -->
+        <div class="right-subpanel bottom-subpanel">
+          <div class="panel-header">
+            <i data-lucide="image"></i>
+            <h2>Recipe Inspiration</h2>
+          </div>
+          <div class="panel-content scrollable" style="padding: 12px;" id="inspirationImagesContainer">
+            <div class="empty-state">
+              <p>No inspiration images loaded yet. Run a search to see visual references.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Slide-out Settings Drawer -->
+    <div id="settingsDrawer" class="drawer-overlay hidden">
+      <div class="drawer-content">
+        <div class="drawer-header">
+          <i data-lucide="key-round"></i>
+          <h2>Settings & API Setup</h2>
+          <button id="settingsCloseBtn" class="close-btn"><i data-lucide="x"></i></button>
+        </div>
+        <div class="drawer-body">
+          <h3>OpenAI Configuration</h3>
+          <div class="form-group">
+            <label for="openaiApiKey">OpenAI API Key</label>
+            <div class="password-input-container">
+              <input type="password" id="openaiApiKey" placeholder="sk-proj-..." autocomplete="new-password">
+              <button class="toggle-password" data-target="openaiApiKey"><i data-lucide="eye"></i></button>
+            </div>
+            <span class="input-hint">Your key is stored securely in your browser's local storage and is never uploaded elsewhere.</span>
+          </div>
+
+          <hr class="drawer-divider">
+
+          <h3>Tavily Search Engine</h3>
+          <p class="drawer-desc">Query recipe articles and YouTube search results before writing to build scientifically accurate proportions and verified instructions.</p>
+          
+          <div class="form-group">
+            <label for="tavilyApiKey">Tavily Search API Key</label>
+            <div class="password-input-container">
+              <input type="password" id="tavilyApiKey" placeholder="tvly-..." autocomplete="new-password">
+              <button class="toggle-password" data-target="tavilyApiKey"><i data-lucide="eye"></i></button>
+            </div>
+            <span class="input-hint">Required if "Research Web & YouTube" is toggled. Get a free key at <a href="https://tavily.com" target="_blank" style="color:var(--accent);text-decoration:underline;">tavily.com</a>.</span>
+          </div>
+
+          <hr class="drawer-divider">
+
+          <h3>WordPress REST API Connection</h3>
+          <p class="drawer-desc">Connect directly to your self-hosted WordPress site. This uses basic authentication over HTTPS, which requires your user login details combined with a WordPress <strong>Application Password</strong>.</p>
+          
+          <div class="form-group">
+            <label for="wpSiteUrl">WordPress Site URL</label>
+            <input type="url" id="wpSiteUrl" placeholder="https://example.com" autocomplete="off">
+            <span class="input-hint">Ensure it includes <code>https://</code> and is the base URL of your site.</span>
+          </div>
+
+          <div class="form-group">
+            <label for="wpUsername">WordPress Username</label>
+            <input type="text" id="wpUsername" placeholder="admin" autocomplete="off">
+          </div>
+
+          <div class="form-group">
+            <label for="wpAppPassword">WordPress Application Password</label>
+            <div class="password-input-container">
+              <input type="password" id="wpAppPassword" placeholder="xxxx xxxx xxxx xxxx" autocomplete="new-password">
+              <button class="toggle-password" data-target="wpAppPassword"><i data-lucide="eye"></i></button>
+            </div>
+            <span class="input-hint">Generate this in WordPress: <em>Users > Your Profile > Application Passwords</em>. Do <strong>NOT</strong> use your main account login password.</span>
+          </div>
+
+          <hr class="drawer-divider">
+
+          <h3>Affiliate Products Inventory</h3>
+          <p class="drawer-desc">Add kitchen tools, pans, or ingredients with your affiliate URLs. The AI will naturally recommend relevant products from this list in your articles.</p>
+
+          <div class="affiliates-container">
+            <div class="affiliate-add-form">
+              <input type="text" id="newAffiliateName" placeholder="Product Name (e.g. Instant Pot)" autocomplete="off">
+              <input type="url" id="newAffiliateUrl" placeholder="Affiliate URL (e.g. https://...)" autocomplete="off">
+              <input type="text" id="newAffiliateNote" placeholder="Personal Pitch/Note (e.g. mom gifted me, heats fast)" autocomplete="off">
+              <button id="addAffiliateBtn" class="icon-text-btn primary-nav-btn" type="button" style="justify-content: center; width: 100%;">
+                <i data-lucide="plus"></i> Add Product
+              </button>
+            </div>
+            <div id="affiliatesList" class="affiliates-list">
+              <div class="empty-state">
+                <p>No affiliate products added yet</p>
+              </div>
+            </div>
+          </div>
+
+          <button id="saveSettingsBtn" class="action-btn">
+            <i data-lucide="check-circle-2"></i>
+            <span>Save Settings</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide-out Blog Inspiration Drawer -->
+    <div id="inspirationDrawer" class="drawer-overlay hidden">
+      <div class="drawer-content drawer-wide">
+        <div class="drawer-header">
+          <i data-lucide="book-open"></i>
+          <h2>Blog Inspiration Styles</h2>
+          <button id="inspirationCloseBtn" class="close-btn"><i data-lucide="x"></i></button>
+        </div>
+        <div class="drawer-body">
+          <p class="drawer-desc">Here are details of the recipe writing styles supported by this assistant, which have been modeled from the internet's most successful food blogs.</p>
+
+          <div class="inspiration-cards-grid">
+            
+            <!-- Pinch of Yum -->
+            <div class="inspire-card">
+              <div class="inspire-card-header preset-poy">
+                <i data-lucide="heart"></i>
+                <h3>Pinch of Yum Style</h3>
+              </div>
+              <div class="inspire-card-body">
+                <p class="pitch">Cozy, conversational, and highly personal storytelling.</p>
+                <ul>
+                  <li><strong>The Hook:</strong> Personal anecdote or everyday family context (why they made it, how it felt).</li>
+                  <li><strong>Photography focus:</strong> Descriptions of textures, color, and steaming pans.</li>
+                  <li><strong>Structure:</strong> High-impact title, story introduction, "How to Make" visual steps summary, structured recipe card, and "Recipe FAQs".</li>
+                  <li><strong>Tone:</strong> Warm, friendly, approachable, written like a message to a friend.</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Serious Eats -->
+            <div class="inspire-card">
+              <div class="inspire-card-header preset-se">
+                <i data-lucide="beaker"></i>
+                <h3>Serious Eats Style</h3>
+              </div>
+              <div class="inspire-card-body">
+                <p class="pitch">Science-based, rigorous culinary analysis and absolute clarity.</p>
+                <ul>
+                  <li><strong>The Hook:</strong> Deconstructing the classic version of the dish and finding its flaws.</li>
+                  <li><strong>Testing Notes:</strong> Explanations of culinary chemistry (e.g. why salt draws out moisture, why reverse searing works).</li>
+                  <li><strong>Structure:</strong> Brief intro, "The Science of [Dish]", "Key Testing Steps", highly exact recipes with weight measurements (grams), and detailed equipment suggestions.</li>
+                  <li><strong>Tone:</strong> Enthusiastic, analytical, precise, authoritative.</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Sally's Baking Addiction -->
+            <div class="inspire-card">
+              <div class="inspire-card-header preset-sba">
+                <i data-lucide="cookie"></i>
+                <h3>Sally's Baking Addiction Style</h3>
+              </div>
+              <div class="inspire-card-body">
+                <p class="pitch">Detailed baking blueprints with troubleshooting guides.</p>
+                <ul>
+                  <li><strong>The Hook:</strong> Passionate baking enthusiasm and promise of foolproof results.</li>
+                  <li><strong>Baker's Cautions:</strong> "Why room temperature butter is critical", "Do not overmix", flour spooning warnings.</li>
+                  <li><strong>Structure:</strong> Enthusiastic introduction, "5 Keys to Success", "Ingredients Breakdown", step-by-step instructions with volume/metric weight toggles, and extensive storage/make-ahead tips.</li>
+                  <li><strong>Tone:</strong> Encouraging, educational, supportive, detail-oriented.</li>
+                </ul>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Custom App JS -->
+  <script src="app.js"></script>
+</body>
+</html>

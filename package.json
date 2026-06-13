@@ -1,0 +1,11 @@
+{
+  "name": "recipe-writer-assistant",
+  "version": "1.0.0",
+  "description": "WordPress recipe writing assistant using OpenAI GPT-4o-mini",
+  "scripts": {
+    "dev": "vite --host"
+  },
+  "devDependencies": {
+    "vite": "^5.2.0"
+  }
+}
