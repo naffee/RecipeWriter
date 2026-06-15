@@ -1,5 +1,32 @@
 // Recipe Writing Assistant - Application Controller
 
+// Network resilient CDN fallbacks
+if (typeof lucide === 'undefined') {
+  window.lucide = {
+    createIcons: () => {
+      console.warn('Lucide library failed to load from CDN. Dynamic icons are disabled.');
+    }
+  };
+}
+if (typeof marked === 'undefined') {
+  window.marked = {
+    parse: (text) => {
+      // Basic fallback line-by-line parser to prevent crashes
+      return (text || '')
+        .split('\n')
+        .map(line => {
+          const trimmed = line.trim();
+          if (trimmed.startsWith('# ')) return `<h1>${trimmed.substring(2)}</h1>`;
+          if (trimmed.startsWith('## ')) return `<h2>${trimmed.substring(3)}</h2>`;
+          if (trimmed.startsWith('### ')) return `<h3>${trimmed.substring(4)}</h3>`;
+          if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) return `<li>${trimmed.substring(2)}</li>`;
+          return trimmed ? `<p>${trimmed}</p>` : '';
+        })
+        .join('\n');
+    }
+  };
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   // Initialize Lucide Icons
   lucide.createIcons();
@@ -21,7 +48,11 @@ document.addEventListener('DOMContentLoaded', () => {
     currentImages: [],
     affiliates: JSON.parse(localStorage.getItem('recipe_writer_affiliates')) || [],
     queue: [],
-    isQueueRunning: false
+    isQueueRunning: false,
+    fetchedPosts: [],
+    generatedPins: [],
+    generatedPinPostIds: JSON.parse(localStorage.getItem('recipe_writer_generated_pin_post_ids')) || [],
+    generatedPinHistory: JSON.parse(localStorage.getItem('recipe_writer_generated_pin_history')) || {}
   };
 
   // DOM Elements
@@ -109,8 +140,62 @@ document.addEventListener('DOMContentLoaded', () => {
   const draftSearch = document.getElementById('draftSearch');
   const draftsListContainer = document.getElementById('draftsListContainer');
 
+  // Pinterest Pin Maker UI Bindings
+  const tabPinMaker = document.getElementById('tabPinMaker');
+  const pinMakerPane = document.getElementById('pin-maker-pane');
+  const pinDefaultBoard = document.getElementById('pinDefaultBoard');
+  const fetchWpPostsBtn = document.getElementById('fetchWpPostsBtn');
+  const wpPostsSelectionContainer = document.getElementById('wpPostsSelectionContainer');
+  const selectAllWpBtn = document.getElementById('selectAllWpBtn');
+  const deselectAllWpBtn = document.getElementById('deselectAllWpBtn');
+  const wpPostsGrid = document.getElementById('wpPostsGrid');
+  const generatePinsBtn = document.getElementById('generatePinsBtn');
+  const wpPostsTargetKeywords = document.getElementById('wpPostsTargetKeywords');
+  const wpFetchProgress = document.getElementById('wpFetchProgress');
+  const pinsAiProgress = document.getElementById('pinsAiProgress');
+  const generatedPinsContainer = document.getElementById('generatedPinsContainer');
+  const downloadAllCsvBtn = document.getElementById('downloadAllCsvBtn');
+  const pinsList = document.getElementById('pinsList');
+  const pinMakerMessageBanner = document.getElementById('pinMakerMessageBanner');
+  const pinScheduleStart = document.getElementById('pinScheduleStart');
+  const pinScheduleSpacing = document.getElementById('pinScheduleSpacing');
+  const distributeScheduleBtn = document.getElementById('distributeScheduleBtn');
+  const toggleLeftPanelBtn = document.getElementById('toggleLeftPanelBtn');
+  const toggleRightPanelBtn = document.getElementById('toggleRightPanelBtn');
+  const showExistingPinsCheckbox = document.getElementById('showExistingPinsCheckbox');
+  const clearPinHistoryBtn = document.getElementById('clearPinHistoryBtn');
+
   // --- INITIALIZATION ---
   
+  // Date time helper
+  function getLocalDateTimeString(d = new Date()) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  // Hex to RGBA helper for translucent backgrounds
+  function hexToRgba(hex, alpha) {
+    const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+    hex = hex.replace(shorthandRegex, (m, r, g, b) => r + r + g + g + b + b);
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? `rgba(${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}, ${alpha})` : `rgba(255, 255, 255, ${alpha})`;
+  }
+
+  const themeBannerBgColors = {
+    crimson: '#fff0f3',
+    navy: '#f0f4f8',
+    charcoal: '#f8f9fa',
+    forest: '#f1f7f4',
+    amber: '#fffdf5'
+  };
+
+  // Pre-fill scheduling start time with the next clean hour (00 minutes)
+  if (pinScheduleStart) {
+    const now = new Date();
+    const nextHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1, 0, 0, 0);
+    pinScheduleStart.value = getLocalDateTimeString(nextHour);
+  }
+
   // Set theme from state
   applyTheme(state.theme);
 
@@ -133,6 +218,23 @@ document.addEventListener('DOMContentLoaded', () => {
   // Render inspiration images list
   renderInspirationImages();
 
+  // Collapse panels on mobile load
+  if (window.innerWidth <= 900) {
+    const pLeft = document.querySelector('.panel-left');
+    const pRight = document.querySelector('.panel-right');
+    if (pLeft) {
+      pLeft.classList.add('collapsed');
+      const leftIcon = toggleLeftPanelBtn?.querySelector('i');
+      if (leftIcon) leftIcon.setAttribute('data-lucide', 'chevron-right');
+    }
+    if (pRight) {
+      pRight.classList.add('collapsed');
+      const rightIcon = toggleRightPanelBtn?.querySelector('i');
+      if (rightIcon) rightIcon.setAttribute('data-lucide', 'chevron-left');
+    }
+    lucide.createIcons();
+  }
+
   // --- CORE METHODS ---
 
   // Theme Toggling
@@ -140,6 +242,36 @@ document.addEventListener('DOMContentLoaded', () => {
     const newTheme = state.theme === 'light' ? 'dark' : 'light';
     applyTheme(newTheme);
   });
+
+  // Sidebar Panel Toggling (Collapsible Panels)
+  const panelLeft = document.querySelector('.panel-left');
+  const panelRight = document.querySelector('.panel-right');
+
+  if (toggleLeftPanelBtn && panelLeft) {
+    toggleLeftPanelBtn.addEventListener('click', () => {
+      panelLeft.classList.toggle('collapsed');
+      const isCollapsed = panelLeft.classList.contains('collapsed');
+      const icon = toggleLeftPanelBtn.querySelector('i');
+      if (icon) {
+        icon.setAttribute('data-lucide', isCollapsed ? 'chevron-right' : 'chevron-left');
+        lucide.createIcons();
+      }
+      toggleLeftPanelBtn.title = isCollapsed ? 'Expand Recipe Generator Panel' : 'Collapse Recipe Generator Panel';
+    });
+  }
+
+  if (toggleRightPanelBtn && panelRight) {
+    toggleRightPanelBtn.addEventListener('click', () => {
+      panelRight.classList.toggle('collapsed');
+      const isCollapsed = panelRight.classList.contains('collapsed');
+      const icon = toggleRightPanelBtn.querySelector('i');
+      if (icon) {
+        icon.setAttribute('data-lucide', isCollapsed ? 'chevron-left' : 'chevron-right');
+        lucide.createIcons();
+      }
+      toggleRightPanelBtn.title = isCollapsed ? 'Expand Right Panel' : 'Collapse Right Panel';
+    });
+  }
 
   function applyTheme(theme) {
     state.theme = theme;
@@ -1274,6 +1406,8 @@ Ensure the markdown link wraps the specific product name/anchor text naturally w
     wpPublishBtn.disabled = true;
     wpPublishProgress.classList.remove('hidden');
     wpMessageBanner.className = 'message-banner hidden';
+    wpMessageBanner.innerHTML = '';
+    if (state.wpMessageTimeout) clearTimeout(state.wpMessageTimeout);
 
     try {
       // 1. Prepare HTML from Markdown
@@ -1406,6 +1540,27 @@ Ensure the markdown link wraps the specific product name/anchor text naturally w
         <p><a href="${postData.link}" target="_blank">View Post <i data-lucide="external-link" style="width:12px;height:12px;display:inline-block;vertical-align:middle;"></i></a> | <a href="${state.wpUrl}/wp-admin/post.php?post=${postData.id}&action=edit" target="_blank">Edit in Dashboard <i data-lucide="edit" style="width:12px;height:12px;display:inline-block;vertical-align:middle;"></i></a></p>
       `;
 
+      // Clear the editor & form inputs on successful send
+      recipeMarkdown.value = '';
+      wpPostTitle.value = '';
+      wpCategory.value = '';
+      wpTags.value = '';
+      state.currentDraftId = null;
+      state.currentSources = [];
+      state.currentImages = [];
+      
+      // Update preview, gallery, and draft lists to match empty editor state
+      renderLivePreview();
+      renderInspirationImages();
+      renderDraftsList();
+
+      // Automatically hide/clear the success banner after 10 seconds
+      if (state.wpMessageTimeout) clearTimeout(state.wpMessageTimeout);
+      state.wpMessageTimeout = setTimeout(() => {
+        wpMessageBanner.className = 'message-banner hidden';
+        wpMessageBanner.innerHTML = '';
+      }, 10000);
+
     } catch (error) {
       console.error(error);
       wpMessageBanner.className = 'message-banner error';
@@ -1447,5 +1602,898 @@ Ensure the markdown link wraps the specific product name/anchor text naturally w
 
     inspirationImagesContainer.appendChild(grid);
   }
+
+  // --- PINTEREST PIN MAKER LOGIC ---
+
+  // Toggle visibility of already generated pins
+  if (showExistingPinsCheckbox) {
+    showExistingPinsCheckbox.addEventListener('change', () => {
+      renderWpPostsGrid();
+    });
+  }
+
+  // Clear generated pins history
+  if (clearPinHistoryBtn) {
+    clearPinHistoryBtn.addEventListener('click', () => {
+      if (confirm('Are you sure you want to clear your generated Pins history? This will allow you to generate pins for all posts again.')) {
+        state.generatedPinPostIds = [];
+        state.generatedPinHistory = {};
+        localStorage.removeItem('recipe_writer_generated_pin_post_ids');
+        localStorage.removeItem('recipe_writer_generated_pin_history');
+        renderWpPostsGrid();
+        
+        // Show success status
+        pinMakerMessageBanner.className = 'message-banner success';
+        pinMakerMessageBanner.innerHTML = `<p><strong>Success:</strong> Pin history cleared.</p>`;
+        pinMakerMessageBanner.classList.remove('hidden');
+        setTimeout(() => {
+          pinMakerMessageBanner.classList.add('hidden');
+        }, 3000);
+      }
+    });
+  }
+
+  // Distribute schedule manually across the currently generated pins
+  if (distributeScheduleBtn) {
+    distributeScheduleBtn.addEventListener('click', () => {
+      if (!state.generatedPins || state.generatedPins.length === 0) {
+        alert("No generated pins in queue to schedule.");
+        return;
+      }
+      
+      const startDateTimeVal = pinScheduleStart ? pinScheduleStart.value : '';
+      const spacingHoursVal = pinScheduleSpacing ? pinScheduleSpacing.value : '1';
+      
+      let baseDate;
+      if (startDateTimeVal) {
+        baseDate = new Date(startDateTimeVal);
+      } else {
+        const now = new Date();
+        baseDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1, 0, 0, 0);
+      }
+      let spacingHours = spacingHoursVal === 'none' ? 0 : parseInt(spacingHoursVal);
+      
+      state.generatedPins.forEach((pin, index) => {
+        let scheduledDate = new Date(baseDate.getTime() + index * spacingHours * 60 * 60 * 1000);
+        pin.publishDate = getLocalDateTimeString(scheduledDate);
+      });
+      
+      // Re-render the pins queue list to display the updated dates
+      renderPinsQueueList();
+      
+      // Show success notification or banner
+      pinMakerMessageBanner.className = 'message-banner success';
+      pinMakerMessageBanner.innerHTML = `<p><strong>Success:</strong> Distributed sequential dates/times across all pins in queue.</p>`;
+      pinMakerMessageBanner.classList.remove('hidden');
+      setTimeout(() => {
+        pinMakerMessageBanner.classList.add('hidden');
+      }, 3000);
+    });
+  }
+
+  // 1. Fetch WP Posts
+  fetchWpPostsBtn.addEventListener('click', async () => {
+    if (!state.wpUrl || !state.wpUser || !state.wpPassword) {
+      alert('Please configure your WordPress Site URL, Username, and Application Password in Settings.');
+      openDrawer(settingsDrawer);
+      return;
+    }
+
+    fetchWpPostsBtn.disabled = true;
+    wpFetchProgress.classList.remove('hidden');
+    wpPostsSelectionContainer.classList.add('hidden');
+    generatedPinsContainer.classList.add('hidden');
+    pinMakerMessageBanner.className = 'message-banner hidden';
+
+    try {
+      const authHeader = 'Basic ' + btoa(`${state.wpUser}:${state.wpPassword}`);
+      const response = await fetch(`${state.wpUrl}/wp-json/wp/v2/posts?status=publish&_embed&per_page=20`, {
+        headers: { 'Authorization': authHeader }
+      });
+
+      if (!response.ok) {
+        throw new Error(`WordPress API Error: ${response.status} ${response.statusText}`);
+      }
+
+      const posts = await response.json();
+      state.fetchedPosts = posts.map(post => {
+        let imageUrl = '';
+        if (post._embedded && post._embedded['wp:featuredmedia'] && post._embedded['wp:featuredmedia'][0]) {
+          imageUrl = post._embedded['wp:featuredmedia'][0].source_url || '';
+        }
+        return {
+          id: post.id,
+          title: post.title?.rendered || 'Untitled Post',
+          status: post.status,
+          link: post.link,
+          imageUrl: imageUrl
+        };
+      });
+
+      renderWpPostsGrid();
+      wpPostsSelectionContainer.classList.remove('hidden');
+    } catch (err) {
+      console.error(err);
+      pinMakerMessageBanner.className = 'message-banner error';
+      pinMakerMessageBanner.innerHTML = `<p><strong>Failed to fetch posts:</strong> ${err.message}</p>`;
+      pinMakerMessageBanner.classList.remove('hidden');
+    } finally {
+      fetchWpPostsBtn.disabled = false;
+      wpFetchProgress.classList.add('hidden');
+    }
+  });
+
+  function renderWpPostsGrid() {
+    wpPostsGrid.innerHTML = '';
+    
+    // Filter posts that already have pins generated unless showExistingPinsCheckbox is checked
+    const showExisting = showExistingPinsCheckbox ? showExistingPinsCheckbox.checked : false;
+    const postsToRender = state.fetchedPosts.filter(post => {
+      const alreadyHasPin = state.generatedPinPostIds.includes(post.id);
+      return showExisting || !alreadyHasPin;
+    });
+
+    if (postsToRender.length === 0) {
+      wpPostsGrid.innerHTML = `<div class="empty-state" style="grid-column: 1 / -1;"><p>No posts to display.</p></div>`;
+      return;
+    }
+
+    postsToRender.forEach(post => {
+      const alreadyHasPin = state.generatedPinPostIds.includes(post.id);
+      const card = document.createElement('div');
+      card.className = 'wp-post-card';
+      card.setAttribute('data-id', post.id);
+
+      const thumbHtml = post.imageUrl 
+        ? `<img src="${post.imageUrl}" class="wp-post-card-thumb" alt="">` 
+        : `<div class="wp-post-card-thumb" style="display:flex;align-items:center;justify-content:center;background:var(--border-color);color:var(--text-muted);"><i data-lucide="image" style="width:18px;height:18px;"></i></div>`;
+
+      // Badge layout
+      let pinStatusHtml = '';
+      if (alreadyHasPin) {
+        const historyInfo = state.generatedPinHistory[post.id];
+        const dateStr = historyInfo && historyInfo.createdAt 
+          ? new Date(historyInfo.createdAt).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'})
+          : '';
+        const dateDisplay = dateStr ? ` (${dateStr})` : '';
+        pinStatusHtml = `<span class="wp-post-card-status publish" style="background: var(--accent-light); color: var(--accent-text);">Pin Created${dateDisplay}</span>`;
+      } else {
+        pinStatusHtml = `<span class="wp-post-card-status publish">${post.status}</span>`;
+      }
+
+      card.innerHTML = `
+        <input type="checkbox" class="wp-post-card-checkbox" data-id="${post.id}">
+        ${thumbHtml}
+        <div class="wp-post-card-info">
+          <div class="wp-post-card-title" title="${post.title}">${post.title}</div>
+          <div class="wp-post-card-meta">
+            ${pinStatusHtml}
+          </div>
+        </div>
+      `;
+
+      card.addEventListener('click', (e) => {
+        if (e.target.className !== 'wp-post-card-checkbox') {
+          const cb = card.querySelector('.wp-post-card-checkbox');
+          cb.checked = !cb.checked;
+        }
+        card.classList.toggle('selected', card.querySelector('.wp-post-card-checkbox').checked);
+      });
+
+      wpPostsGrid.appendChild(card);
+    });
+
+    lucide.createIcons();
+  }
+
+  selectAllWpBtn.addEventListener('click', () => {
+    document.querySelectorAll('.wp-post-card').forEach(card => {
+      const cb = card.querySelector('.wp-post-card-checkbox');
+      cb.checked = true;
+      card.classList.add('selected');
+    });
+  });
+
+  deselectAllWpBtn.addEventListener('click', () => {
+    document.querySelectorAll('.wp-post-card').forEach(card => {
+      const cb = card.querySelector('.wp-post-card-checkbox');
+      cb.checked = false;
+      card.classList.remove('selected');
+    });
+  });
+
+  // 2. Generate Pin Copies with AI
+  generatePinsBtn.addEventListener('click', async () => {
+    const selectedCheckboxes = Array.from(wpPostsGrid.querySelectorAll('.wp-post-card-checkbox:checked'));
+    if (selectedCheckboxes.length === 0) {
+      alert('Please select at least one WordPress post to generate Pins.');
+      return;
+    }
+
+    if (!state.apiKey) {
+      alert('Please configure your OpenAI API Key first under Settings.');
+      openDrawer(settingsDrawer);
+      return;
+    }
+
+    const selectedPostIds = selectedCheckboxes.map(cb => parseInt(cb.getAttribute('data-id')));
+    const selectedPosts = state.fetchedPosts.filter(p => selectedPostIds.includes(p.id));
+
+    const keywordsVal = wpPostsTargetKeywords ? wpPostsTargetKeywords.value.trim() : '';
+
+    generatePinsBtn.disabled = true;
+    pinsAiProgress.classList.remove('hidden');
+    generatedPinsContainer.classList.add('hidden');
+    pinMakerMessageBanner.className = 'message-banner hidden';
+
+    try {
+      const userPrompt = {
+        posts: selectedPosts.map(p => ({
+          id: p.id,
+          title: p.title
+        })),
+        targetKeywords: keywordsVal
+      };
+
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.apiKey}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a professional Pinterest copywriter and food blogger. For each food blog post provided, generate a catchy, click-worthy, SEO-optimized Pinterest Pin Title (maximum 50 chars) and a storyteller-style Pin Description (maximum 250 chars) that hooks the user and encourages them to click. If "targetKeywords" are provided, you MUST organically integrate these keywords into both the "pinTitle" and "pinDescription" for search engine optimization. Also, generate 3-5 relevant hashtags based on the keywords and title, and append them at the very end of the "pinDescription". You MUST respond with a valid, raw JSON array of objects, where each object has:\n- "postId": the original post ID (number)\n- "pinTitle": a catchy Pin headline\n- "pinDescription": a storyteller description + hashtags\nDo not include markdown code block syntax (like ```json) or any explanation text. Return raw JSON.'
+            },
+            {
+              role: 'user',
+              content: JSON.stringify(userPrompt)
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`OpenAI API Error: ${errText}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices[0]?.message?.content || '[]';
+      const cleanJson = content.replace(/^```json/i, '').replace(/^```/i, '').replace(/```$/i, '').trim();
+      const aiSuggestions = JSON.parse(cleanJson);
+
+      const defaultBoardVal = pinDefaultBoard.value.trim() || 'Recipes';
+      const startDateTimeVal = pinScheduleStart ? pinScheduleStart.value : '';
+      const spacingHoursVal = pinScheduleSpacing ? pinScheduleSpacing.value : '1';
+      
+      let baseDate;
+      if (startDateTimeVal) {
+        baseDate = new Date(startDateTimeVal);
+      } else {
+        const now = new Date();
+        baseDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1, 0, 0, 0);
+      }
+      let spacingHours = spacingHoursVal === 'none' ? 0 : parseInt(spacingHoursVal);
+
+      let domainDefault = 'MY RECIPE BLOG';
+      try {
+        const urlObj = new URL(state.wpUrl);
+        domainDefault = urlObj.hostname.replace('www.', '').toUpperCase();
+      } catch (e) {}
+
+      // Build state list of generated pins and append to existing queue
+      const newPins = selectedPosts.map((post, idx) => {
+        const aiInfo = aiSuggestions.find(item => item.postId === post.id) || {};
+        
+        // Calculate sequential schedule based on current size of queue
+        const queueOffset = state.generatedPins.length + idx;
+        let scheduledDate = new Date(baseDate.getTime() + queueOffset * spacingHours * 60 * 60 * 1000);
+        let publishDateStr = getLocalDateTimeString(scheduledDate);
+
+        return {
+          postId: post.id,
+          wpTitle: post.title,
+          wpUrl: post.link,
+          imageUrl: post.imageUrl,
+          pinTitle: aiInfo.pinTitle || post.title,
+          pinDescription: aiInfo.pinDescription || `Check out this delicious recipe for ${post.title}!`,
+          board: defaultBoardVal,
+          publishDate: publishDateStr,
+          layout: 'text-top',
+          color: 'crimson',
+          fontFamily: 'serif',
+          fontSize: 24,
+          badgeText: domainDefault,
+          overlayPosition: 50,
+          overlayOpacity: 95,
+          createdAt: new Date().toISOString()
+        };
+      });
+
+      state.generatedPins = [...state.generatedPins, ...newPins];
+
+      // Update generated pins tracking list
+      selectedPosts.forEach(post => {
+        if (!state.generatedPinPostIds.includes(post.id)) {
+          state.generatedPinPostIds.push(post.id);
+        }
+        state.generatedPinHistory[post.id] = {
+          createdAt: new Date().toISOString()
+        };
+      });
+      localStorage.setItem('recipe_writer_generated_pin_post_ids', JSON.stringify(state.generatedPinPostIds));
+      localStorage.setItem('recipe_writer_generated_pin_history', JSON.stringify(state.generatedPinHistory));
+
+      // Clear keywords input on success
+      if (wpPostsTargetKeywords) {
+        wpPostsTargetKeywords.value = '';
+      }
+
+      // Update WordPress selectable posts list grid
+      renderWpPostsGrid();
+
+      renderPinsQueueList();
+      generatedPinsContainer.classList.remove('hidden');
+    } catch (err) {
+      console.error(err);
+      pinMakerMessageBanner.className = 'message-banner error';
+      pinMakerMessageBanner.innerHTML = `<p><strong>Failed to generate Pin copy:</strong> ${err.message}</p>`;
+      pinMakerMessageBanner.classList.remove('hidden');
+    } finally {
+      generatePinsBtn.disabled = false;
+      pinsAiProgress.classList.add('hidden');
+    }
+  });
+
+  function renderPinsQueueList() {
+    pinsList.innerHTML = '';
+    if (state.generatedPins.length === 0) {
+      generatedPinsContainer.classList.add('hidden');
+      return;
+    }
+
+    let domain = 'MY RECIPE BLOG';
+    try {
+      const urlObj = new URL(state.wpUrl);
+      domain = urlObj.hostname.replace('www.', '').toUpperCase();
+    } catch (e) {}
+
+    state.generatedPins.forEach((pin, idx) => {
+      const card = document.createElement('div');
+      card.className = 'pin-editor-card';
+      card.setAttribute('data-index', idx);
+
+      const proxiedImg = pin.imageUrl ? `https://images.weserv.nl/?url=${encodeURIComponent(pin.imageUrl)}` : '';
+
+      // Compute initial styles if layout is text-banner
+      const isBanner = pin.layout === 'text-banner';
+      const initialPosStyle = isBanner ? `top: ${pin.overlayPosition || 50}%;` : '';
+      const initialBgColorHex = themeBannerBgColors[pin.color] || '#ffffff';
+      const initialRgbaColor = isBanner ? hexToRgba(initialBgColorHex, (pin.overlayOpacity !== undefined ? pin.overlayOpacity : 95) / 100) : '';
+      const initialBgStyle = isBanner ? `background-color: ${initialRgbaColor};` : '';
+      const textBlockStyle = isBanner ? `style="${initialPosStyle} ${initialBgStyle}"` : '';
+
+      const createdDateStr = pin.createdAt ? new Date(pin.createdAt).toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }) : new Date().toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+
+      card.innerHTML = `
+        <div class="pin-preview-container-wrapper">
+          <div class="pin-preview-card layout-${pin.layout} theme-${pin.color}">
+            <img src="${proxiedImg}" class="pin-preview-image" alt="" onerror="this.style.display='none';">
+            <div class="pin-preview-text-block" ${textBlockStyle}>
+              <div class="pin-preview-site-name" style="${pin.badgeText ? '' : 'display: none;'}">${pin.badgeText || ''}</div>
+              <h4 class="pin-preview-title" style="font-family: ${pin.fontFamily === 'serif' ? 'var(--font-serif)' : 'var(--font-ui)'}; font-size: ${pin.fontSize}px;">${pin.pinTitle}</h4>
+            </div>
+          </div>
+          <span style="font-size: 11px; color: var(--text-muted);">9:16 Live Preview</span>
+        </div>
+
+        <div class="pin-editor-fields">
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--text-muted); margin-bottom: 8px; border-bottom: 1px solid var(--border-color); padding-bottom: 6px;">
+            <span>WP Post ID: <strong>#${pin.postId}</strong></span>
+            <span>Created: <strong>${createdDateStr}</strong></span>
+          </div>
+
+          <div class="pin-editor-row">
+            <div class="form-group">
+              <label>Layout Template</label>
+              <select class="pin-layout-select" data-index="${idx}">
+                <option value="text-top" ${pin.layout === 'text-top' ? 'selected' : ''}>Text Top (Image Bottom)</option>
+                <option value="text-bottom" ${pin.layout === 'text-bottom' ? 'selected' : ''}>Text Bottom (Image Top)</option>
+                <option value="text-banner" ${pin.layout === 'text-banner' ? 'selected' : ''}>Banner Overlay</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Color Palette Theme</label>
+              <select class="pin-color-select" data-index="${idx}">
+                <option value="crimson" ${pin.color === 'crimson' ? 'selected' : ''}>Crimson Red</option>
+                <option value="navy" ${pin.color === 'navy' ? 'selected' : ''}>Navy Blue</option>
+                <option value="charcoal" ${pin.color === 'charcoal' ? 'selected' : ''}>Sleek Charcoal</option>
+                <option value="forest" ${pin.color === 'forest' ? 'selected' : ''}>Forest Green</option>
+                <option value="amber" ${pin.color === 'amber' ? 'selected' : ''}>Golden Amber</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="pin-editor-row banner-overlay-controls" style="${pin.layout === 'text-banner' ? '' : 'display: none;'}">
+            <div class="form-group">
+              <label>Overlay Position (Vertical)</label>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <input type="range" class="pin-overlay-position-input" data-index="${idx}" min="10" max="90" value="${pin.overlayPosition || 50}" style="flex: 1; accent-color: var(--accent); cursor: pointer;">
+                <span class="pin-overlay-position-val" style="font-size: 12px; font-weight: 600; width: 36px; text-align: right;">${pin.overlayPosition || 50}%</span>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Overlay Opacity</label>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <input type="range" class="pin-overlay-opacity-input" data-index="${idx}" min="50" max="100" value="${pin.overlayOpacity !== undefined ? pin.overlayOpacity : 95}" style="flex: 1; accent-color: var(--accent); cursor: pointer;">
+                <span class="pin-overlay-opacity-val" style="font-size: 12px; font-weight: 600; width: 36px; text-align: right;">${pin.overlayOpacity !== undefined ? pin.overlayOpacity : 95}%</span>
+              </div>
+            </div>
+          </div>
+
+
+          <div class="pin-editor-row">
+            <div class="form-group">
+              <label>Font Style</label>
+              <select class="pin-font-family-select" data-index="${idx}">
+                <option value="serif" ${pin.fontFamily === 'serif' ? 'selected' : ''}>Elegant Serif (Lora)</option>
+                <option value="sans-serif" ${pin.fontFamily === 'sans-serif' ? 'selected' : ''}>Modern Sans-Serif (Jakarta)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Title Size (px)</label>
+              <input type="number" class="pin-font-size-input" data-index="${idx}" value="${pin.fontSize}" min="16" max="36" step="1">
+            </div>
+            <div class="form-group">
+              <label>Site Badge Text</label>
+              <input type="text" class="pin-badge-input" data-index="${idx}" value="${pin.badgeText}" placeholder="Leave empty to remove" style="text-transform: uppercase;">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Pin Title</label>
+            <input type="text" class="pin-title-input" data-index="${idx}" value="${pin.pinTitle}" maxlength="100">
+          </div>
+
+          <div class="form-group">
+            <label>Pin Description</label>
+            <textarea class="pin-desc-input" data-index="${idx}" rows="4" maxlength="500">${pin.pinDescription}</textarea>
+          </div>
+
+          <div class="pin-editor-row">
+            <div class="form-group">
+              <label>Destination Link</label>
+              <input type="url" class="pin-link-input" data-index="${idx}" value="${pin.wpUrl}">
+            </div>
+            <div class="form-group">
+              <label>Pinterest Board</label>
+              <input type="text" class="pin-board-input" data-index="${idx}" value="${pin.board}">
+            </div>
+            <div class="form-group">
+              <label>Publish Date & Time</label>
+              <input type="datetime-local" class="pin-date-input" data-index="${idx}" value="${pin.publishDate}">
+            </div>
+          </div>
+
+          <div class="pin-card-actions">
+            <button class="action-btn download-pin-image-btn" data-index="${idx}">
+              <i data-lucide="download"></i>
+              <span>Download Pin Image</span>
+            </button>
+            <button class="icon-text-btn secondary remove-pin-btn" data-index="${idx}" style="margin-left:auto;">
+              <i data-lucide="trash-2"></i>
+              <span>Remove</span>
+            </button>
+          </div>
+        </div>
+      `;
+
+      // Wire interactive updates
+      const layoutSelect = card.querySelector('.pin-layout-select');
+      const colorSelect = card.querySelector('.pin-color-select');
+      const fontFamilySelect = card.querySelector('.pin-font-family-select');
+      const fontSizeInput = card.querySelector('.pin-font-size-input');
+      const badgeInput = card.querySelector('.pin-badge-input');
+
+      const titleInput = card.querySelector('.pin-title-input');
+      const descInput = card.querySelector('.pin-desc-input');
+      const linkInput = card.querySelector('.pin-link-input');
+      const boardInput = card.querySelector('.pin-board-input');
+      const dateInput = card.querySelector('.pin-date-input');
+
+      const previewCard = card.querySelector('.pin-preview-card');
+      const previewBadge = card.querySelector('.pin-preview-site-name');
+      const previewTitle = card.querySelector('.pin-preview-title');
+      const previewTextBlock = card.querySelector('.pin-preview-text-block');
+
+      // Sliders elements
+      const bannerControls = card.querySelector('.banner-overlay-controls');
+      const overlayPosInput = card.querySelector('.pin-overlay-position-input');
+      const overlayPosVal = card.querySelector('.pin-overlay-position-val');
+      const overlayOpacityInput = card.querySelector('.pin-overlay-opacity-input');
+      const overlayOpacityVal = card.querySelector('.pin-overlay-opacity-val');
+
+      function updateBannerPreview() {
+        if (pin.layout === 'text-banner' && previewTextBlock) {
+          previewTextBlock.style.top = `${pin.overlayPosition || 50}%`;
+          const bgColorHex = themeBannerBgColors[pin.color] || '#ffffff';
+          const opacityVal = pin.overlayOpacity !== undefined ? pin.overlayOpacity : 95;
+          previewTextBlock.style.backgroundColor = hexToRgba(bgColorHex, opacityVal / 100);
+        } else if (previewTextBlock) {
+          previewTextBlock.style.top = '';
+          previewTextBlock.style.backgroundColor = '';
+        }
+      }
+
+      layoutSelect.addEventListener('change', (e) => {
+        const val = e.target.value;
+        pin.layout = val;
+        previewCard.className = `pin-preview-card layout-${val} theme-${pin.color}`;
+        if (val === 'text-banner') {
+          bannerControls.style.display = '';
+        } else {
+          bannerControls.style.display = 'none';
+        }
+        updateBannerPreview();
+      });
+
+      colorSelect.addEventListener('change', (e) => {
+        const val = e.target.value;
+        pin.color = val;
+        previewCard.className = `pin-preview-card layout-${pin.layout} theme-${val}`;
+        updateBannerPreview();
+      });
+
+      overlayPosInput.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value) || 50;
+        pin.overlayPosition = val;
+        overlayPosVal.innerText = `${val}%`;
+        updateBannerPreview();
+      });
+
+      overlayOpacityInput.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value) || 95;
+        pin.overlayOpacity = val;
+        overlayOpacityVal.innerText = `${val}%`;
+        updateBannerPreview();
+      });
+
+      fontFamilySelect.addEventListener('change', (e) => {
+        const val = e.target.value;
+        pin.fontFamily = val;
+        previewTitle.style.fontFamily = val === 'serif' ? 'var(--font-serif)' : 'var(--font-ui)';
+      });
+
+      fontSizeInput.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value) || 24;
+        pin.fontSize = val;
+        previewTitle.style.fontSize = `${val}px`;
+      });
+
+      badgeInput.addEventListener('input', (e) => {
+        const val = e.target.value.trim();
+        pin.badgeText = val;
+        previewBadge.innerText = val.toUpperCase();
+        previewBadge.style.display = val ? '' : 'none';
+      });
+
+      titleInput.addEventListener('input', (e) => {
+        const val = e.target.value;
+        pin.pinTitle = val;
+        previewTitle.innerText = val;
+      });
+
+      descInput.addEventListener('input', (e) => {
+        pin.pinDescription = e.target.value;
+      });
+
+      linkInput.addEventListener('input', (e) => {
+        pin.wpUrl = e.target.value;
+      });
+
+      boardInput.addEventListener('input', (e) => {
+        pin.board = e.target.value;
+      });
+
+      dateInput.addEventListener('input', (e) => {
+        pin.publishDate = e.target.value;
+      });
+
+      // Actions
+      card.querySelector('.download-pin-image-btn').addEventListener('click', () => {
+        downloadPinImage(pin);
+      });
+
+      card.querySelector('.remove-pin-btn').addEventListener('click', () => {
+        state.generatedPins.splice(idx, 1);
+        renderPinsQueueList();
+      });
+
+      pinsList.appendChild(card);
+    });
+
+    lucide.createIcons();
+  }
+
+  // 3. Canvas Renderer Engine
+  async function downloadPinImage(item) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 735;
+    canvas.height = 1102;
+    const ctx = canvas.getContext('2d');
+
+    // Theme values matching CSS
+    const themeColors = {
+      crimson: { bg: '#800020', text: '#ffffff', accent: '#fecdd3', bannerBg: '#fff0f3', bannerText: '#800020' },
+      navy: { bg: '#0F1E36', text: '#ffffff', accent: '#dbeafe', bannerBg: '#f0f4f8', bannerText: '#0F1E36' },
+      charcoal: { bg: '#212529', text: '#ffffff', accent: '#f1f3f5', bannerBg: '#f8f9fa', bannerText: '#212529' },
+      forest: { bg: '#1E352F', text: '#ffffff', accent: '#d1fae5', bannerBg: '#f1f7f4', bannerText: '#1E352F' },
+      amber: { bg: '#C67817', text: '#ffffff', accent: '#fef3c7', bannerBg: '#fffdf5', bannerText: '#C67817' }
+    };
+    const colors = themeColors[item.color] || themeColors.crimson;
+
+    const badgeTextVal = (item.badgeText || '').trim().toUpperCase();
+    const titleFontFamily = item.fontFamily === 'sans-serif' ? '"Plus Jakarta Sans", sans-serif' : '"Lora", Georgia, serif';
+    const canvasFontSize = Math.round((item.fontSize || 24) * 3.06);
+    const titleLineHeight = Math.round(canvasFontSize * 1.25);
+
+    // Load fonts properly: we should ensure fonts are loaded
+    await document.fonts.ready;
+
+    // Fetch image with proxy to avoid CORS taint
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+
+    await new Promise((resolve) => {
+      img.onload = resolve;
+      img.onerror = resolve;
+      if (item.imageUrl) {
+        img.src = `https://images.weserv.nl/?url=${encodeURIComponent(item.imageUrl)}`;
+      } else {
+        resolve();
+      }
+    });
+
+    // Drawing helper functions
+    function drawCoverImage(ctx, img, x, y, w, h) {
+      if (!img.complete || !img.naturalWidth) {
+        ctx.fillStyle = '#f3f4f6';
+        ctx.fillRect(x, y, w, h);
+        return;
+      }
+      const imgW = img.naturalWidth;
+      const imgH = img.naturalHeight;
+      const imgRatio = imgW / imgH;
+      const targetRatio = w / h;
+
+      let sx, sy, sw, sh;
+      if (imgRatio > targetRatio) {
+        sh = imgH;
+        sw = imgH * targetRatio;
+        sx = (imgW - sw) / 2;
+        sy = 0;
+      } else {
+        sw = imgW;
+        sh = imgW / targetRatio;
+        sx = 0;
+        sy = (imgH - sh) / 2;
+      }
+      ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+    }
+
+    function getLines(ctx, text, maxWidth) {
+      const words = text.split(' ');
+      const lines = [];
+      let currentLine = words[0] || '';
+
+      for (let i = 1; i < words.length; i++) {
+        const word = words[i];
+        const width = ctx.measureText(currentLine + ' ' + word).width;
+        if (width < maxWidth) {
+          currentLine += ' ' + word;
+        } else {
+          lines.push(currentLine);
+          currentLine = word;
+        }
+      }
+      lines.push(currentLine);
+      return lines;
+    }
+
+    function drawRoundedRect(ctx, x, y, width, height, radius) {
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + width - radius, y);
+      ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+      ctx.lineTo(x + width, y + height - radius);
+      ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+      ctx.lineTo(x + radius, y + height);
+      ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+      ctx.lineTo(x, y + radius);
+      ctx.quadraticCurveTo(x, y, x + radius, y);
+      ctx.closePath();
+    }
+
+    function drawTextBlock(ctx, badgeText, titleText, colors, yStart, yEnd, isBanner) {
+      const blockHeight = yEnd - yStart;
+      const centerX = 367.5;
+      
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+
+      // Title config
+      ctx.font = `bold ${canvasFontSize}px ${titleFontFamily}`;
+      const maxWidth = isBanner ? 630 : 640;
+      const lines = getLines(ctx, titleText, maxWidth);
+      const totalTitleHeight = lines.length * titleLineHeight;
+
+      // Domain config
+      let domainHeight = 0;
+      let gap = 0;
+      if (badgeText) {
+        domainHeight = 36;
+        gap = 36;
+      }
+      const totalContentHeight = domainHeight + gap + totalTitleHeight;
+      
+      let currentY = yStart + (blockHeight - totalContentHeight) / 2;
+
+      // Draw Domain / Badge if present
+      if (badgeText) {
+        ctx.fillStyle = isBanner ? colors.bannerText : colors.accent;
+        ctx.font = 'bold 28px "Plus Jakarta Sans", sans-serif';
+        ctx.fillText(badgeText.split('').join(' '), centerX, currentY);
+        currentY += domainHeight + gap;
+      }
+
+      // Title
+      ctx.fillStyle = isBanner ? colors.bannerText : colors.text;
+      ctx.font = `bold ${canvasFontSize}px ${titleFontFamily}`;
+      lines.forEach((line) => {
+        ctx.fillText(line, centerX, currentY);
+        currentY += titleLineHeight;
+      });
+    }
+
+    // Clean canvas
+    ctx.clearRect(0, 0, 735, 1102);
+
+    if (item.layout === 'text-top') {
+      // Background for text
+      ctx.fillStyle = colors.bg;
+      ctx.fillRect(0, 0, 735, 441);
+      
+      // Image
+      drawCoverImage(ctx, img, 0, 441, 735, 661);
+      
+      // Text
+      drawTextBlock(ctx, badgeTextVal, item.pinTitle, colors, 0, 441, false);
+
+    } else if (item.layout === 'text-bottom') {
+      // Image
+      drawCoverImage(ctx, img, 0, 0, 735, 661);
+      
+      // Background for text
+      ctx.fillStyle = colors.bg;
+      ctx.fillRect(0, 661, 735, 441);
+      
+      // Text
+      drawTextBlock(ctx, badgeTextVal, item.pinTitle, colors, 661, 1102, false);
+
+    } else if (item.layout === 'text-banner') {
+      // Image fills background
+      drawCoverImage(ctx, img, 0, 0, 735, 1102);
+
+      // Measure layout for banner centering
+      ctx.font = `bold ${canvasFontSize}px ${titleFontFamily}`;
+      const lines = getLines(ctx, item.pinTitle, 630);
+      const totalTitleHeight = lines.length * titleLineHeight;
+      
+      let domainHeight = 0;
+      let gap = 0;
+      if (badgeTextVal) {
+        domainHeight = 36;
+        gap = 36;
+      }
+      const padding = 40;
+      const bannerHeight = domainHeight + gap + totalTitleHeight + padding * 2;
+      
+      const verticalPos = item.overlayPosition !== undefined ? item.overlayPosition / 100 : 0.50;
+      let bannerY = (1102 * verticalPos) - (bannerHeight / 2);
+      if (bannerY < 0) bannerY = 0;
+      if (bannerY + bannerHeight > 1102) bannerY = 1102 - bannerHeight;
+
+      // Draw full-width banner box
+      const opacityVal = item.overlayOpacity !== undefined ? item.overlayOpacity / 100 : 0.95;
+      ctx.fillStyle = hexToRgba(colors.bannerBg, opacityVal);
+      ctx.fillRect(0, bannerY, 735, bannerHeight);
+
+      // Border lines on top and bottom of the banner
+      ctx.strokeStyle = colors.accent;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(0, bannerY);
+      ctx.lineTo(735, bannerY);
+      ctx.moveTo(0, bannerY + bannerHeight);
+      ctx.lineTo(735, bannerY + bannerHeight);
+      ctx.stroke();
+
+      // Text inside banner
+      drawTextBlock(ctx, badgeTextVal, item.pinTitle, colors, bannerY + padding, bannerY + bannerHeight - padding, true);
+    }
+
+    // Download PNG
+    try {
+      const dataUrl = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = `${item.pinTitle.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-pin.png`;
+      link.click();
+    } catch (err) {
+      alert("Security restriction: Could not download the canvas image due to cross-origin images. The Pinterest CSV can still be downloaded.");
+      console.error(err);
+    }
+  }
+
+  // 4. Download Bulk CSV
+  downloadAllCsvBtn.addEventListener('click', () => {
+    if (state.generatedPins.length === 0) {
+      alert("No pins generated to export.");
+      return;
+    }
+
+    function escapeCsvValue(val) {
+      if (val === undefined || val === null) return '';
+      const str = String(val);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    }
+
+    function formatCsvPublishDate(dateStr) {
+      if (!dateStr) return '';
+      if (dateStr.includes('T') && dateStr.length === 16) {
+        return `${dateStr}:00`;
+      }
+      return dateStr;
+    }
+
+    const csvContent = [
+      ['Title', 'Description', 'Link', 'Media URL', 'Pinterest board', 'Publish date'].map(escapeCsvValue).join(','),
+      ...state.generatedPins.map(pin => [
+        pin.pinTitle,
+        pin.pinDescription,
+        pin.wpUrl,
+        pin.imageUrl,
+        pin.board,
+        formatCsvPublishDate(pin.publishDate)
+      ].map(escapeCsvValue).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `pinterest-bulk-upload.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  });
 
 });

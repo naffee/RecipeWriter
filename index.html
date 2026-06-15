@@ -22,6 +22,9 @@
     <!-- Top Navigation Bar -->
     <header class="app-header">
       <div class="header-logo">
+        <button id="toggleLeftPanelBtn" class="icon-btn" title="Collapse Recipe Generator Panel" style="margin-right: 12px; border: none; background: transparent; padding: 4px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+          <i data-lucide="chevron-left"></i>
+        </button>
         <i class="chef-icon" data-lucide="cooking-pot"></i>
         <h1>Recipe<span>Writer</span></h1>
         <span class="badge">WordPress Edition</span>
@@ -38,6 +41,9 @@
         <button id="settingsOpenBtn" class="nav-btn primary-nav-btn" title="API & WordPress Credentials">
           <i data-lucide="settings"></i>
           <span>Settings & WP API</span>
+        </button>
+        <button id="toggleRightPanelBtn" class="icon-btn" title="Collapse Right Panel" style="margin-left: 4px; border: none; background: transparent; padding: 4px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+          <i data-lucide="chevron-right"></i>
         </button>
       </div>
     </header>
@@ -224,6 +230,10 @@
               <i data-lucide="wordpress"></i>
               <span>Publish to WordPress</span>
             </button>
+            <button id="tabPinMaker" class="tab-btn" data-tab="pin-maker-pane">
+              <i data-lucide="image"></i>
+              <span>Pinterest Pin Maker</span>
+            </button>
           </div>
           <div class="editor-actions">
             <button id="saveDraftBtn" class="icon-text-btn secondary" title="Save Draft">
@@ -311,6 +321,121 @@
 
               <!-- WordPress Success/Error banner -->
               <div id="wpMessageBanner" class="message-banner hidden"></div>
+            </div>
+          </div>
+
+          <!-- Tab 4: Pinterest Pin Maker Pane -->
+          <div id="pin-maker-pane" class="tab-pane">
+            <div class="pin-maker-container">
+              <div class="pin-maker-header">
+                <h3>Pinterest Pin Maker</h3>
+                <p class="section-desc">Fetch published recipes from WordPress, auto-generate click-worthy Pin graphics using AI, and export bulk upload CSV files along with 9:16 vertical images.</p>
+              </div>
+
+              <!-- Top Controls / Fetch section -->
+              <div class="pin-maker-controls-row">
+                <div class="form-group" style="flex: 2 1 200px;">
+                  <label for="pinDefaultBoard">Default Pinterest Board</label>
+                  <input type="text" id="pinDefaultBoard" placeholder="e.g. Delicious Pasta Recipes" value="Recipes">
+                </div>
+                <div class="form-group" style="flex: 1.5 1 180px;">
+                  <label for="pinScheduleStart">Bulk Schedule Start Time</label>
+                  <input type="datetime-local" id="pinScheduleStart">
+                </div>
+                <div class="form-group" style="flex: 1 1 150px;">
+                  <label for="pinScheduleSpacing">Schedule Spacing</label>
+                  <select id="pinScheduleSpacing">
+                    <option value="none">Same Time</option>
+                    <option value="1" selected>Every 1 Hour</option>
+                    <option value="2">Every 2 Hours</option>
+                    <option value="3">Every 3 Hours</option>
+                    <option value="4">Every 4 Hours</option>
+                    <option value="6">Every 6 Hours</option>
+                    <option value="12">Every 12 Hours</option>
+                    <option value="24">Every 24 Hours (Daily)</option>
+                  </select>
+                </div>
+                <div class="pin-controls-actions-group" style="display: flex; gap: 8px; flex-shrink: 0; align-items: flex-end;">
+                  <button id="fetchWpPostsBtn" class="action-btn secondary" style="height: 42px;">
+                    <i data-lucide="refresh-cw"></i>
+                    <span>Fetch Posts</span>
+                  </button>
+                  <button id="distributeScheduleBtn" class="action-btn" style="height: 42px;" title="Apply sequential times to all pins in queue">
+                    <i data-lucide="calendar"></i>
+                    <span>Distribute Schedule</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- WordPress Posts Selection Grid Container -->
+              <div id="wpPostsSelectionContainer" class="wp-posts-selection-container hidden">
+                <div class="selection-header">
+                  <h4>Select Posts for Pins</h4>
+                  <div class="selection-actions" style="flex-wrap: wrap; gap: 8px 12px; align-items: center;">
+                    <button id="selectAllWpBtn" class="link-btn">Select All</button>
+                    <span class="divider">|</span>
+                    <button id="deselectAllWpBtn" class="link-btn">Deselect All</button>
+                    <span class="divider">|</span>
+                    <label style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; cursor: pointer; color: var(--accent); user-select: none;">
+                      <input type="checkbox" id="showExistingPinsCheckbox" style="accent-color: var(--accent); cursor: pointer; width: 14px; height: 14px; margin: 0;">
+                      <span>Show Posts with Pins</span>
+                    </label>
+                    <span class="divider">|</span>
+                    <button id="clearPinHistoryBtn" class="link-btn" style="color: var(--error-text);">Clear Pin History</button>
+                  </div>
+                </div>
+                
+                <div id="wpPostsGrid" class="wp-posts-grid">
+                  <!-- Dynamically populated with WordPress posts -->
+                </div>
+
+                <div class="action-trigger-row" style="display: flex; flex-direction: column; gap: 12px; align-items: stretch; border-top: 1px solid var(--border-color); padding-top: 16px;">
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label for="wpPostsTargetKeywords" style="font-weight: 700;">Target Keywords for Selected Posts (Optional)</label>
+                    <input type="text" id="wpPostsTargetKeywords" placeholder="e.g. easy dinner, quick pasta (applied to all selected posts)">
+                  </div>
+                  <button id="generatePinsBtn" class="action-btn success-btn" style="align-self: flex-end; width: auto;">
+                    <i data-lucide="wand-2"></i>
+                    <span>Generate Pin Copies with AI</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Progress for Fetching Posts -->
+              <div id="wpFetchProgress" class="progress-box hidden">
+                <div class="progress-spinner"></div>
+                <div class="progress-info">
+                  <p class="progress-title">Fetching WordPress Posts...</p>
+                  <p class="progress-subtitle">Connecting to WordPress REST API</p>
+                </div>
+              </div>
+
+              <!-- Progress for AI Generation -->
+              <div id="pinsAiProgress" class="progress-box hidden">
+                <div class="progress-spinner"></div>
+                <div class="progress-info">
+                  <p class="progress-title">Creating Pinterest Pins...</p>
+                  <p class="progress-subtitle">Writing catchy titles and descriptions using OpenAI</p>
+                </div>
+              </div>
+
+              <!-- Generated Pins Area -->
+              <div id="generatedPinsContainer" class="generated-pins-container hidden">
+                <div class="generated-pins-header">
+                  <h4>Created Pins Queue</h4>
+                  <button id="downloadAllCsvBtn" class="action-btn success-btn">
+                    <i data-lucide="download"></i>
+                    <span>Download Pinterest CSV</span>
+                  </button>
+                </div>
+                
+                <div id="pinsList" class="pins-list">
+                  <!-- Dynamically populated edit cards with live 9:16 previews -->
+                </div>
+              </div>
+
+              <!-- Message Banner for Pin Maker -->
+              <div id="pinMakerMessageBanner" class="message-banner hidden"></div>
             </div>
           </div>
         </div>

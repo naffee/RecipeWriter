@@ -232,27 +232,59 @@ input, select, textarea, button {
 /* Main Workspace Split Panels */
 .app-main {
   flex: 1;
-  display: grid;
-  grid-template-columns: 320px 1fr 280px;
+  display: flex;
   overflow: hidden;
   height: calc(100vh - 64px);
 }
 
-@media (max-width: 1200px) {
-  .app-main {
-    grid-template-columns: 280px 1fr;
-  }
-  .panel-right {
-    display: none; /* Collapsed under mobile/tablet */
-  }
-}
-
 @media (max-width: 900px) {
-  .app-main {
-    grid-template-columns: 1fr;
-  }
   .panel-left {
-    display: none;
+    position: absolute !important;
+    top: 64px;
+    bottom: 0;
+    left: 0;
+    width: 280px !important;
+    z-index: 50;
+    box-shadow: 6px 0 20px rgba(0, 0, 0, 0.15);
+    border-right: 1px solid var(--border-color);
+    transform: translateX(0);
+    opacity: 1 !important;
+    pointer-events: auto;
+    transition: transform var(--transition-normal), opacity var(--transition-normal);
+  }
+  
+  .panel-left.collapsed {
+    transform: translateX(-100%) !important;
+    width: 280px !important;
+    opacity: 0 !important;
+    pointer-events: none;
+  }
+  
+  .panel-right {
+    position: absolute !important;
+    top: 64px;
+    bottom: 0;
+    right: 0;
+    width: 280px !important;
+    z-index: 50;
+    box-shadow: -6px 0 20px rgba(0, 0, 0, 0.15);
+    border-left: 1px solid var(--border-color);
+    transform: translateX(0);
+    opacity: 1 !important;
+    pointer-events: auto;
+    transition: transform var(--transition-normal), opacity var(--transition-normal);
+  }
+  
+  .panel-right.collapsed {
+    transform: translateX(100%) !important;
+    width: 280px !important;
+    opacity: 0 !important;
+    pointer-events: none;
+  }
+
+  .panel-center {
+    width: 100vw !important;
+    flex: 1 !important;
   }
 }
 
@@ -263,15 +295,38 @@ input, select, textarea, button {
   background-color: var(--bg-panel);
   overflow: hidden;
   height: 100%;
-  transition: background-color var(--transition-normal), border-color var(--transition-normal);
+  transition: background-color var(--transition-normal), border-color var(--transition-normal), width var(--transition-normal), opacity var(--transition-normal);
 }
 
 .panel-left {
+  width: 320px;
+  flex-shrink: 0;
   border-right: 1px solid var(--border-color);
 }
 
+.panel-center {
+  flex: 1;
+  min-width: 0;
+}
+
 .panel-right {
+  width: 280px;
+  flex-shrink: 0;
   border-left: 1px solid var(--border-color);
+}
+
+.panel-left.collapsed {
+  width: 0 !important;
+  border-right: none !important;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.panel-right.collapsed {
+  width: 0 !important;
+  border-left: none !important;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .panel-header {
@@ -1570,5 +1625,587 @@ input, select, textarea, button {
 .hidden {
   display: none !important;
 }
+
+/* --- PINTEREST PIN MAKER PANELS & CARD STYLING --- */
+.pin-maker-container {
+  padding: 32px;
+  max-width: 1000px;
+  margin: 0 auto;
+  overflow-y: auto;
+  height: 100%;
+}
+
+.pin-maker-header {
+  margin-bottom: 24px;
+}
+
+.pin-maker-header h3 {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.pin-maker-header .section-desc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.pin-maker-controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 32px;
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.pin-maker-controls-row .form-group {
+  margin-bottom: 0;
+  flex: 1;
+}
+
+.pin-maker-controls-row .action-btn {
+  width: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.wp-posts-selection-container {
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  padding: 24px;
+  border-radius: 12px;
+  margin-bottom: 32px;
+  box-shadow: var(--shadow-sm);
+}
+
+.selection-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 12px;
+}
+
+.selection-header h4 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.selection-actions .link-btn {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0;
+}
+
+.selection-actions .link-btn:hover {
+  text-decoration: underline;
+  color: var(--accent-hover);
+}
+
+.selection-actions .divider {
+  color: var(--text-muted);
+}
+
+.wp-posts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.wp-post-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.wp-post-card:hover {
+  border-color: var(--accent);
+  background-color: var(--bg-panel);
+}
+
+.wp-post-card.selected {
+  border-color: var(--accent);
+  background-color: var(--accent-light);
+}
+
+.wp-post-card-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.wp-post-card-thumb {
+  width: 50px;
+  height: 50px;
+  border-radius: 6px;
+  object-fit: cover;
+  background-color: var(--border-color);
+  flex-shrink: 0;
+}
+
+.wp-post-card-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wp-post-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wp-post-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wp-post-card-status {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.wp-post-card-status.publish {
+  background-color: var(--success-light);
+  color: var(--success-text);
+}
+
+.wp-post-card-status.draft {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
+.action-trigger-row {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--border-color);
+  padding-top: 16px;
+}
+
+/* Generated Pins Container */
+.generated-pins-container {
+  margin-top: 32px;
+}
+
+.generated-pins-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.generated-pins-header h4 {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.pins-list {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* Pin Editor Card */
+.pin-editor-card {
+  display: flex;
+  gap: 24px;
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: var(--shadow);
+  animation: slideDown 0.3s ease-out;
+}
+
+/* 9:16 Preview Card Container */
+.pin-preview-container-wrapper {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.pin-preview-card {
+  width: 240px;
+  height: 427px;
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  background-color: var(--pin-bg, #212529);
+  display: flex;
+  flex-direction: column;
+  transition: all 0.3s ease;
+}
+
+/* Layout Specific Layout Positions */
+.pin-preview-card.layout-text-top {
+  flex-direction: column;
+}
+
+.pin-preview-card.layout-text-top .pin-preview-text-block {
+  height: 40%;
+  order: 1;
+}
+
+.pin-preview-card.layout-text-top .pin-preview-image {
+  height: 60%;
+  order: 2;
+}
+
+.pin-preview-card.layout-text-bottom {
+  flex-direction: column;
+}
+
+.pin-preview-card.layout-text-bottom .pin-preview-image {
+  height: 60%;
+  order: 1;
+}
+
+.pin-preview-card.layout-text-bottom .pin-preview-text-block {
+  height: 40%;
+  order: 2;
+}
+
+.pin-preview-card.layout-text-banner {
+  display: block; /* Absolute positioning layout */
+}
+
+.pin-preview-card.layout-text-banner .pin-preview-image {
+  height: 100%;
+  width: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
+
+.pin-preview-card.layout-text-banner .pin-preview-text-block {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  transform: translateY(-50%);
+  z-index: 2;
+  background-color: var(--pin-banner-bg, rgba(255, 255, 255, 0.95));
+  border-radius: 0;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  border-top: 2px solid var(--pin-accent, var(--accent));
+  border-bottom: 2px solid var(--pin-accent, var(--accent));
+  border-left: none;
+  border-right: none;
+  padding: 16px 20px;
+  height: auto;
+  max-height: 80%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* General Inside Elements */
+.pin-preview-image {
+  width: 100%;
+  object-fit: cover;
+  background-color: #f3f4f6;
+  display: block;
+}
+
+.pin-preview-text-block {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 16px;
+  text-align: center;
+  box-sizing: border-box;
+  background-color: var(--pin-bg);
+  color: var(--pin-text);
+  overflow: hidden;
+}
+
+.pin-preview-site-name {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  opacity: 0.85;
+  color: var(--pin-accent, inherit);
+}
+
+.pin-preview-card.layout-text-banner .pin-preview-site-name {
+  color: var(--pin-banner-text);
+  opacity: 0.7;
+}
+
+.pin-preview-title {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.25;
+  margin: 0;
+  word-wrap: break-word;
+  color: var(--pin-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pin-preview-card.layout-text-banner .pin-preview-title {
+  color: var(--pin-banner-text);
+  font-size: 20px;
+}
+
+/* Theme color definitions */
+.theme-crimson {
+  --pin-bg: #800020;
+  --pin-text: #ffffff;
+  --pin-accent: #fecdd3;
+  --pin-banner-bg: #fff0f3;
+  --pin-banner-text: #800020;
+}
+.theme-navy {
+  --pin-bg: #0F1E36;
+  --pin-text: #ffffff;
+  --pin-accent: #dbeafe;
+  --pin-banner-bg: #f0f4f8;
+  --pin-banner-text: #0F1E36;
+}
+.theme-charcoal {
+  --pin-bg: #212529;
+  --pin-text: #ffffff;
+  --pin-accent: #f1f3f5;
+  --pin-banner-bg: #f8f9fa;
+  --pin-banner-text: #212529;
+}
+.theme-forest {
+  --pin-bg: #1E352F;
+  --pin-text: #ffffff;
+  --pin-accent: #d1fae5;
+  --pin-banner-bg: #f1f7f4;
+  --pin-banner-text: #1E352F;
+}
+.theme-amber {
+  --pin-bg: #C67817;
+  --pin-text: #ffffff;
+  --pin-accent: #fef3c7;
+  --pin-banner-bg: #fffdf5;
+  --pin-banner-text: #C67817;
+}
+
+/* Pin Editor Fields layout */
+.pin-editor-fields {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pin-editor-row {
+  display: flex;
+  gap: 12px;
+}
+
+.pin-editor-row .form-group {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.pin-card-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 16px;
+}
+
+.pin-card-actions button {
+  font-size: 13px;
+}
+
+.pin-desc-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-input);
+  font-size: 14px;
+  outline: none;
+  transition: all var(--transition-fast);
+  resize: vertical;
+  min-height: 100px;
+  line-height: 1.5;
+  font-family: inherit;
+}
+
+.pin-desc-input:focus {
+  border-color: var(--border-color-focus);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+/* --- MOBILE RESPONSIVE ADJUSTMENTS --- */
+
+/* For screen width <= 900px (Tablet overlay and slider updates) */
+@media (max-width: 900px) {
+  .selection-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+}
+
+/* For screen width <= 768px (Tablet / Large Phones stacking) */
+@media (max-width: 768px) {
+  .pin-editor-card {
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 16px;
+  }
+  
+  .pin-editor-fields {
+    width: 100%;
+  }
+}
+
+/* For screen width <= 600px (Mobile Portrait / Header & Swipeable Tabs) */
+@media (max-width: 600px) {
+  /* Header Collapse */
+  .app-header {
+    padding: 0 12px;
+  }
+  
+  .header-logo h1,
+  .header-logo .badge {
+    display: none !important;
+  }
+  
+  .app-header .nav-btn span {
+    display: none !important;
+  }
+  
+  .app-header .nav-btn {
+    padding: 8px;
+    width: 38px;
+    height: 38px;
+    justify-content: center;
+  }
+  
+  /* Swipeable Horizontal Tabs Header */
+  .tab-header {
+    height: auto;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+  
+  .editor-tabs {
+    overflow-x: auto;
+    white-space: nowrap;
+    display: flex;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 4px;
+    scrollbar-width: none; /* Hide scrollbar Firefox */
+  }
+  
+  .editor-tabs::-webkit-scrollbar {
+    display: none; /* Hide scrollbar Webkit */
+  }
+  
+  .tab-btn {
+    padding: 12px 16px;
+    height: auto;
+    flex-shrink: 0;
+  }
+  
+  .editor-actions {
+    justify-content: flex-end;
+    width: 100%;
+  }
+
+  /* Pin Maker Panel Layout */
+  .pin-maker-container {
+    padding: 16px;
+  }
+  
+  .pin-maker-controls-row {
+    padding: 12px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .pin-maker-controls-row .form-group {
+    width: 100%;
+  }
+  
+  .pin-controls-actions-group {
+    width: 100%;
+    justify-content: space-between;
+    margin-top: 8px;
+  }
+  
+  .pin-controls-actions-group button {
+    flex: 1;
+  }
+}
+
+/* For screen width <= 480px (Very small phones styling) */
+@media (max-width: 480px) {
+  .wp-posts-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .pin-editor-row {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .pin-editor-row .form-group {
+    width: 100%;
+  }
+}
+
 
 
