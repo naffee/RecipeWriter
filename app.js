@@ -2232,7 +2232,7 @@ Ensure the markdown link wraps the specific product name/anchor text naturally w
   }
 
   // 3. Canvas Renderer Engine
-  async function downloadPinImage(item) {
+  async function generatePinCanvas(item) {
     const canvas = document.createElement('canvas');
     canvas.width = 735;
     canvas.height = 1102;
@@ -2438,8 +2438,12 @@ Ensure the markdown link wraps the specific product name/anchor text naturally w
       drawTextBlock(ctx, badgeTextVal, item.pinTitle, colors, bannerY + padding, bannerY + bannerHeight - padding, true);
     }
 
-    // Download PNG
+    return canvas;
+  }
+
+  async function downloadPinImage(item) {
     try {
+      const canvas = await generatePinCanvas(item);
       const dataUrl = canvas.toDataURL('image/png');
       const link = document.createElement('a');
       link.href = dataUrl;
@@ -2451,49 +2455,134 @@ Ensure the markdown link wraps the specific product name/anchor text naturally w
     }
   }
 
-  // 4. Download Bulk CSV
-  downloadAllCsvBtn.addEventListener('click', () => {
+  // Upload custom pin graphic to WordPress to get a public URL for bulk CSV upload
+  async function uploadPinToWordPress(item) {
+    if (!state.wpUrl || !state.wpUser || !state.wpPassword) {
+      throw new Error("WordPress credentials not configured.");
+    }
+
+    const canvas = await generatePinCanvas(item);
+    
+    // Convert canvas to blob
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) {
+      throw new Error("Failed to generate image blob from canvas.");
+    }
+
+    const filename = `${item.pinTitle.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-pin.png`;
+    const formData = new FormData();
+    formData.append('file', blob, filename);
+    formData.append('title', item.pinTitle);
+    formData.append('status', 'publish');
+
+    const authHeader = 'Basic ' + btoa(`${state.wpUser}:${state.wpPassword}`);
+    
+    const response = await fetch(`${state.wpUrl}/wp-json/wp/v2/media`, {
+      method: 'POST',
+      headers: {
+        'Authorization': authHeader
+      },
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errJson = await response.json().catch(() => ({}));
+      throw new Error(errJson.message || `WordPress Media Upload HTTP ${response.status}`);
+    }
+
+    const mediaData = await response.json();
+    return mediaData.source_url; // Public hosted image URL
+  }
+
+  // 4. Download Bulk CSV with Hosted Graphic Support
+  downloadAllCsvBtn.addEventListener('click', async () => {
     if (state.generatedPins.length === 0) {
       alert("No pins generated to export.");
       return;
     }
 
-    function escapeCsvValue(val) {
-      if (val === undefined || val === null) return '';
-      const str = String(val);
-      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
+    // Check credentials
+    if (!state.wpUrl || !state.wpUser || !state.wpPassword) {
+      alert("WordPress site credentials are required to upload customized graphics. CSV will default to the raw feature images without overlay text.");
+      generateAndTriggerCsvDownload();
+      return;
     }
 
-    function formatCsvPublishDate(dateStr) {
-      if (!dateStr) return '';
-      if (dateStr.includes('T') && dateStr.length === 16) {
-        return `${dateStr}:00`;
+    const originalBtnHtml = downloadAllCsvBtn.innerHTML;
+    downloadAllCsvBtn.disabled = true;
+    downloadAllCsvBtn.innerHTML = '<span class="progress-spinner" style="width:14px;height:14px;border-width:1.5px;display:inline-block;vertical-align:middle;margin-right:6px;"></span>Uploading...';
+
+    pinMakerMessageBanner.className = 'message-banner success';
+    pinMakerMessageBanner.innerHTML = `<p><strong>Uploading custom graphics to WordPress:</strong> Please wait while we host your Pin images. This ensures Pinterest can fetch the overlay text and styles.</p>`;
+    pinMakerMessageBanner.classList.remove('hidden');
+
+    try {
+      for (let i = 0; i < state.generatedPins.length; i++) {
+        const pin = state.generatedPins[i];
+        if (!pin.customPinImageUrl) {
+          pinMakerMessageBanner.innerHTML = `<p><strong>Uploading custom graphics to WordPress:</strong> Processing Pin ${i + 1} of ${state.generatedPins.length} ("${pin.pinTitle.substring(0, 30)}...")</p>`;
+          try {
+            const uploadedUrl = await uploadPinToWordPress(pin);
+            pin.customPinImageUrl = uploadedUrl;
+          } catch (uploadErr) {
+            console.error(`Failed to upload pin ${i}:`, uploadErr);
+            // Fallback to original image url if single upload fails
+          }
+        }
       }
-      return dateStr;
+
+      pinMakerMessageBanner.className = 'message-banner success';
+      pinMakerMessageBanner.innerHTML = `<p><strong>Success!</strong> All custom graphics uploaded. Downloading bulk CSV...</p>`;
+      setTimeout(() => pinMakerMessageBanner.classList.add('hidden'), 4000);
+
+      generateAndTriggerCsvDownload();
+    } catch (err) {
+      console.error(err);
+      alert(`Error hosting pin graphics: ${err.message}. CSV will download using raw featured images.`);
+      generateAndTriggerCsvDownload();
+    } finally {
+      downloadAllCsvBtn.disabled = false;
+      downloadAllCsvBtn.innerHTML = originalBtnHtml;
     }
 
-    const csvContent = [
-      ['Title', 'Description', 'Link', 'Media URL', 'Pinterest board', 'Publish date'].map(escapeCsvValue).join(','),
-      ...state.generatedPins.map(pin => [
-        pin.pinTitle,
-        pin.pinDescription,
-        pin.wpUrl,
-        pin.imageUrl,
-        pin.board,
-        formatCsvPublishDate(pin.publishDate)
-      ].map(escapeCsvValue).join(','))
-    ].join('\n');
+    function generateAndTriggerCsvDownload() {
+      function escapeCsvValue(val) {
+        if (val === undefined || val === null) return '';
+        const str = String(val);
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      }
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `pinterest-bulk-upload.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+      function formatCsvPublishDate(dateStr) {
+        if (!dateStr) return '';
+        if (dateStr.includes('T') && dateStr.length === 16) {
+          return `${dateStr}:00`;
+        }
+        return dateStr;
+      }
+
+      const csvContent = [
+        ['Title', 'Description', 'Link', 'Media URL', 'Pinterest board', 'Publish date'].map(escapeCsvValue).join(','),
+        ...state.generatedPins.map(pin => [
+          pin.pinTitle,
+          pin.pinDescription,
+          pin.wpUrl,
+          pin.customPinImageUrl || pin.imageUrl, // Use uploaded customized image with overlay text!
+          pin.board,
+          formatCsvPublishDate(pin.publishDate)
+        ].map(escapeCsvValue).join(','))
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `pinterest-bulk-upload.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
   });
 
 });
